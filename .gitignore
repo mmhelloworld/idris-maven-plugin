@@ -1,0 +1,7 @@
+target/
+build/
+*.ttc
+*.ttm
+.idea/
+*.iml
+.DS_Store

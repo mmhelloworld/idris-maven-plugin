@@ -1,0 +1,6 @@
+package hello
+
+sourcedir = "src/main/idris"
+
+main = Main
+executable = hello
