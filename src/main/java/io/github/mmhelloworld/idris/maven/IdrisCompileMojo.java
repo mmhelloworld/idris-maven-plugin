@@ -20,24 +20,21 @@ import java.util.List;
     threadSafe = true)
 public class IdrisCompileMojo extends AbstractIdrisMojo {
 
-    /** Directory into which compiled Idris classes are copied. */
-    @Parameter(defaultValue = "${project.build.outputDirectory}", property = "idris.outputDirectory")
-    private File outputDirectory;
+  /** Directory into which compiled Idris classes are copied. */
+  @Parameter(defaultValue = "${project.build.outputDirectory}", property = "idris.outputDirectory")
+  private File outputDirectory;
 
-    @Override
-    public void execute() throws MojoExecutionException {
-        if (skip) {
-            getLog().info("Skipping Idris compilation (idris.skip=true)");
-            return;
-        }
-
-        File pkg = resolvePackageFile();
-        File workingDirectory = pkg.getParentFile();
-        getLog().info("Compiling Idris package " + pkg.getName() + " (JVM backend)");
-
-        runIdris(List.of("--build", pkg.getAbsolutePath()), workingDirectory);
-
-        int copied = copyCompiledClasses(workingDirectory, outputDirectory);
-        getLog().info("Copied " + copied + " compiled class file(s) to " + outputDirectory);
+  @Override
+  public void execute() throws MojoExecutionException {
+    if (skip) {
+      getLog().info("Skipping Idris compilation (idris.skip=true)");
+      return;
     }
+    var pkg = resolvePackageFile();
+    var workingDirectory = pkg.getParentFile();
+    getLog().info("Compiling Idris package " + pkg.getName() + " (JVM backend)");
+    runIdris(List.of("--build", pkg.getAbsolutePath()), workingDirectory);
+    var copied = copyCompiledClasses(workingDirectory, outputDirectory);
+    getLog().info("Copied " + copied + " compiled class file(s) to " + outputDirectory);
+  }
 }

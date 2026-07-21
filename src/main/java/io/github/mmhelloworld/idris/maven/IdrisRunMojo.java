@@ -9,7 +9,6 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Runs the compiled Idris program on the JVM, using the project's runtime classpath (compiled
@@ -20,56 +19,52 @@ import java.util.Map;
     threadSafe = true)
 public class IdrisRunMojo extends AbstractIdrisMojo {
 
-    /**
-     * Fully qualified main class of the compiled program. When omitted it is derived from the
-     * package's {@code executable} field as {@code <executable>.JvmMain}.
-     */
-    @Parameter(property = "idris.mainClass")
-    private String mainClass;
+  /**
+   * Fully qualified main class of the compiled program. When omitted it is derived from the
+   * package's {@code executable} field as {@code <executable>.JvmMain}.
+   */
+  @Parameter(property = "idris.mainClass")
+  private String mainClass;
 
-    /** Arguments passed to the program. */
-    @Parameter(property = "idris.args")
-    private List<String> args;
+  /** Arguments passed to the program. */
+  @Parameter(property = "idris.args")
+  private List<String> args;
 
-    /** JVM options for the run (separate from the compiler's options). */
-    @Parameter(property = "idris.run.jvmArgs", defaultValue = "")
-    private String runJvmArgs;
+  /** JVM options for the run (separate from the compiler's options). */
+  @Parameter(property = "idris.run.jvmArgs", defaultValue = "")
+  private String runJvmArgs;
 
-    @Override
-    public void execute() throws MojoExecutionException {
-        if (skip) {
-            getLog().info("Skipping Idris run (idris.skip=true)");
-            return;
-        }
-
-        String entryPoint = mainClass;
-        if (entryPoint == null || entryPoint.isBlank()) {
-            entryPoint = mainClassFor(resolvePackageFile());
-        }
-
-        List<String> classpath;
-        try {
-            classpath = project.getRuntimeClasspathElements();
-        } catch (DependencyResolutionRequiredException e) {
-            throw new MojoExecutionException("Failed to resolve runtime classpath", e);
-        }
-
-        List<String> command = new ArrayList<>();
-        command.add(javaExec());
-        if (runJvmArgs != null && !runJvmArgs.isBlank()) {
-            for (String arg : runJvmArgs.trim().split("\\s+")) {
-                command.add(arg);
-            }
-        }
-        command.add("-cp");
-        command.add(String.join(File.pathSeparator, classpath));
-        command.add(entryPoint);
-        if (args != null) {
-            command.addAll(args);
-        }
-
-        getLog().info("Running Idris program " + entryPoint);
-        Map<String, String> env = environmentVariables != null ? environmentVariables : Map.of();
-        exec(command, project.getBasedir(), env, "idris-run");
+  @Override
+  public void execute() throws MojoExecutionException {
+    if (skip) {
+      getLog().info("Skipping Idris run (idris.skip=true)");
+      return;
     }
+    var entryPoint = mainClass != null && !mainClass.isBlank()
+        ? mainClass
+        : mainClassFor(resolvePackageFile());
+    getLog().info("Running Idris program " + entryPoint);
+    exec(runCommand(entryPoint), project.getBasedir(), configuredEnvironment(), "idris-run");
+  }
+
+  private List<String> runCommand(String entryPoint) throws MojoExecutionException {
+    var command = new ArrayList<String>();
+    command.add(javaExecutable());
+    command.addAll(splitArgs(runJvmArgs));
+    command.addAll(List.of("-cp", String.join(File.pathSeparator, runtimeClasspath()), entryPoint));
+    command.addAll(programArguments());
+    return command;
+  }
+
+  private List<String> runtimeClasspath() throws MojoExecutionException {
+    try {
+      return project.getRuntimeClasspathElements();
+    } catch (DependencyResolutionRequiredException e) {
+      throw new MojoExecutionException("Failed to resolve runtime classpath", e);
+    }
+  }
+
+  private List<String> programArguments() {
+    return args != null ? args : List.of();
+  }
 }

@@ -8,9 +8,10 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 
 import java.io.File;
-import java.util.ArrayList;
+import java.nio.file.Files;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Stream;
 
 /**
  * Builds and runs an Idris test package on the JVM. The test package is expected to produce an
@@ -22,71 +23,78 @@ import java.util.Map;
     threadSafe = true)
 public class IdrisTestMojo extends AbstractIdrisMojo {
 
-    /** The Idris test package file ({@code .ipkg}) to build and run. */
-    @Parameter(property = "idris.testPackageFile")
-    private File testPackageFile;
+  /** The Idris test package file ({@code .ipkg}) to build and run. */
+  @Parameter(property = "idris.testPackageFile")
+  private File testPackageFile;
 
-    /**
-     * Main class of the compiled test program. When omitted it is derived from the test package's
-     * {@code executable} field as {@code <executable>.JvmMain}.
-     */
-    @Parameter(property = "idris.testMainClass")
-    private String testMainClass;
+  /**
+   * Main class of the compiled test program. When omitted it is derived from the test package's
+   * {@code executable} field as {@code <executable>.JvmMain}.
+   */
+  @Parameter(property = "idris.testMainClass")
+  private String testMainClass;
 
-    @Parameter(property = "skipTests", defaultValue = "false")
-    private boolean skipTests;
+  /** Skips running Idris tests when {@code true} (mirrors Surefire's {@code skipTests}). */
+  @Parameter(property = "skipTests", defaultValue = "false")
+  private boolean skipTests;
 
-    @Parameter(property = "maven.test.skip", defaultValue = "false")
-    private boolean mavenTestSkip;
+  /** Skips running Idris tests when {@code true} (mirrors {@code maven.test.skip}). */
+  @Parameter(property = "maven.test.skip", defaultValue = "false")
+  private boolean mavenTestSkip;
 
-    @Override
-    public void execute() throws MojoExecutionException {
-        if (skip || skipTests || mavenTestSkip) {
-            getLog().info("Skipping Idris tests");
-            return;
-        }
-        if (testPackageFile == null) {
-            getLog().info("No <testPackageFile> configured; skipping Idris tests");
-            return;
-        }
-        if (!testPackageFile.isFile()) {
-            throw new MojoExecutionException("Idris test package file not found: " + testPackageFile);
-        }
-
-        File workingDirectory = testPackageFile.getParentFile();
-        String entryPoint = testMainClass;
-        if (entryPoint == null || entryPoint.isBlank()) {
-            entryPoint = mainClassFor(testPackageFile);
-        }
-
-        getLog().info("Building Idris test package " + testPackageFile.getName());
-        runIdris(List.of("--build", testPackageFile.getAbsolutePath()), workingDirectory);
-
-        List<String> classpath;
-        try {
-            classpath = project.getTestClasspathElements();
-        } catch (DependencyResolutionRequiredException e) {
-            throw new MojoExecutionException("Failed to resolve test classpath", e);
-        }
-        // Include the freshly-built test classes emitted next to the test package.
-        File testExec = new File(workingDirectory, "build/exec");
-        if (testExec.isDirectory()) {
-            File[] appDirs = testExec.listFiles((d, name) -> name.endsWith("_app"));
-            if (appDirs != null) {
-                for (File appDir : appDirs) {
-                    classpath.add(appDir.getAbsolutePath());
-                }
-            }
-        }
-
-        List<String> command = new ArrayList<>();
-        command.add(javaExec());
-        command.add("-cp");
-        command.add(String.join(File.pathSeparator, classpath));
-        command.add(entryPoint);
-
-        getLog().info("Running Idris tests " + entryPoint);
-        Map<String, String> env = environmentVariables != null ? environmentVariables : Map.of();
-        exec(command, workingDirectory, env, "idris-test");
+  @Override
+  public void execute() throws MojoExecutionException {
+    var skipReason = skipReason();
+    if (skipReason.isPresent()) {
+      getLog().info(skipReason.get());
+      return;
     }
+    runTests();
+  }
+
+  private Optional<String> skipReason() {
+    return skip || skipTests || mavenTestSkip ? Optional.of("Skipping Idris tests")
+        : testPackageFile == null ? Optional.of("No <testPackageFile> configured; skipping Idris tests")
+        : Optional.empty();
+  }
+
+  private void runTests() throws MojoExecutionException {
+    if (!testPackageFile.isFile()) {
+      throw new MojoExecutionException("Idris test package file not found: " + testPackageFile);
+    }
+    var workingDirectory = testPackageFile.getParentFile();
+    getLog().info("Building Idris test package " + testPackageFile.getName());
+    runIdris(List.of("--build", testPackageFile.getAbsolutePath()), workingDirectory);
+    var entryPoint = testMainClass != null && !testMainClass.isBlank()
+        ? testMainClass
+        : mainClassFor(testPackageFile);
+    getLog().info("Running Idris tests " + entryPoint);
+    exec(testCommand(testClasspath(workingDirectory), entryPoint),
+        workingDirectory, configuredEnvironment(), "idris-test");
+  }
+
+  private List<String> testClasspath(File workingDirectory) throws MojoExecutionException {
+    try {
+      return Stream.concat(
+              project.getTestClasspathElements().stream(),
+              builtTestAppClassDirs(workingDirectory).stream())
+          .toList();
+    } catch (DependencyResolutionRequiredException e) {
+      throw new MojoExecutionException("Failed to resolve test classpath", e);
+    }
+  }
+
+  /** The freshly-built test classes emitted next to the test package. */
+  private static List<String> builtTestAppClassDirs(File workingDirectory) {
+    var execDir = workingDirectory.toPath().resolve("build").resolve("exec");
+    return childrenOrEmpty(execDir).stream()
+        .filter(Files::isDirectory)
+        .filter(dir -> dir.getFileName().toString().endsWith("_app"))
+        .map(dir -> dir.toAbsolutePath().toString())
+        .toList();
+  }
+
+  private static List<String> testCommand(List<String> classpath, String entryPoint) {
+    return List.of(javaExecutable(), "-cp", String.join(File.pathSeparator, classpath), entryPoint);
+  }
 }

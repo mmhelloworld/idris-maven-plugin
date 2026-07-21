@@ -13,7 +13,7 @@ link against. The compiler is downloaded once, unpacked into a local cache, and 
 
 ## Requirements
 
-- JDK 17+ (the plugin); the forked Idris compiler runs on the same JVM
+- JDK 21+ (the plugin); the forked Idris compiler runs on the same JVM
 - Maven 3.9+
 
 ## Quick start
@@ -58,6 +58,7 @@ mvn idris:run        # runs the compiled program
 | Goal | Default phase | Description |
 |------|---------------|-------------|
 | `idris:compile` | `compile` | Runs `idris2 --build <package>.ipkg` with the JVM backend and copies the emitted classes into `target/classes`. |
+| `idris:package` | `package` | Installs the Idris library into a project-local staging prefix, zips it, and attaches it as the `-idris.zip` classifier artifact for `mvn install`/`deploy` to publish. |
 | `idris:run` | — | Runs the compiled program using the project's runtime classpath. |
 | `idris:test` | `test` | Builds and runs an Idris test package (configure `<testPackageFile>`). |
 | `idris:help` | — | Prints plugin documentation. |
@@ -73,11 +74,66 @@ Common parameters (all optional unless noted):
 | `sourceDirectory` | `idris.sourceDirectory` | `${project.basedir}` | Directory containing the `.ipkg`. |
 | `outputDirectory` | `idris.outputDirectory` | `${project.build.outputDirectory}` | Where compiled classes are copied (`compile` goal). |
 | `compilerHome` | `idris.compilerHome` | `${user.home}/.idris-maven/compiler` | Cache for unpacked compiler distributions. |
+| `packagesHome` | `idris.packagesHome` | `${user.home}/.idris-maven/packages` | Cache for extracted Idris library dependencies. |
+| `stagingDirectory` | `idris.stagingDirectory` | `${project.build.directory}/idris/prefix` | Staging prefix used by `idris:package`. |
 | `jvmArgs` | `idris.jvmArgs` | `-Xss92m -Xms3g -Xmx3g` | JVM options for the forked compiler. |
 | `idrisExecutable` | `idris.executable` | — | Escape hatch: use an installed `idris2` instead of resolving from Maven. |
 | `packagePaths` | — | — | Extra entries appended to `IDRIS2_PATH`. |
 | `mainClass` | `idris.mainClass` | `<executable>.JvmMain` | Entry point for `idris:run`. |
 | `skip` | `idris.skip` | `false` | Skip the goal. |
+
+## Library dependencies
+
+Idris libraries can be shared through Maven like any other artifact (see
+[`examples/lib-and-app`](examples/lib-and-app)).
+
+**Publishing a library.** Add the `package` goal to the library module; the library's `.ipkg`
+declares its `modules` (no `main`/`executable`):
+
+```xml
+<execution>
+  <goals>
+    <goal>package</goal>
+  </goals>
+</execution>
+```
+
+`idris:package` runs `idris2 --install` into `target/idris/prefix`, zips the installed package
+(ipkg metadata plus the checked `.ttc` tree), and attaches it as
+`<artifactId>-<version>-idris.zip`. Maven's regular `install`/`deploy` phases then put it in the
+local repository or publish it, exactly like a sources or javadoc jar.
+
+**Consuming a library.** Declare it in two places — the Maven dependency (which fetches the zip)
+and the `.ipkg` `depends` (which tells the compiler to use it):
+
+```xml
+<dependency>
+  <groupId>com.example</groupId>
+  <artifactId>mylib</artifactId>
+  <version>1.0.0</version>
+  <classifier>idris</classifier>
+  <type>zip</type>
+</dependency>
+```
+
+```
+depends = mylib
+```
+
+Before each compile the plugin extracts every `idris`-classifier zip dependency into
+`packagesHome` (re-extracting when a SNAPSHOT changes) and passes the directories to the compiler
+via `IDRIS2_PACKAGE_PATH`. Idris dependencies are transitive: a library's own `idris`-classifier
+zip dependencies (at compile scope) flow to its consumers automatically.
+
+Notes:
+
+- Producer and consumer should use the same `idris-jvm-runtime` version; a mismatch surfaces as an
+  idris2 "TTC version" error.
+- In a multi-module build, run at least the `package` phase at the aggregator (`mvn package`, not
+  `mvn compile`) — the sibling's `-idris.zip` only exists after its own `package` phase.
+- `idris:package` with the `idrisExecutable` escape hatch requires making that compiler's standard
+  library findable manually (e.g. an `IDRIS2_PACKAGE_PATH` entry in `<environmentVariables>`),
+  because overriding `IDRIS2_PREFIX` hides its default package directory.
 
 ## How it works
 

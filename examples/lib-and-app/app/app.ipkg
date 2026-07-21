@@ -1,0 +1,6 @@
+package app
+
+depends = mylib
+sourcedir = "src/main/idris"
+main = Main
+executable = app
