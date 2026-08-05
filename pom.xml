@@ -4,7 +4,7 @@
 
     <groupId>io.github.mmhelloworld</groupId>
     <artifactId>idris-maven-plugin</artifactId>
-    <version>0.0.1</version>
+    <version>0.0.2-SNAPSHOT</version>
     <packaging>maven-plugin</packaging>
 
     <name>Idris Maven Plugin</name>
@@ -33,7 +33,7 @@
         <url>https://github.com/mmhelloworld/idris-maven-plugin</url>
         <connection>scm:git:git://github.com/mmhelloworld/idris-maven-plugin.git</connection>
         <developerConnection>scm:git:https://github.com/mmhelloworld/idris-maven-plugin.git</developerConnection>
-        <tag>v0.0.1</tag>
+        <tag>HEAD</tag>
     </scm>
 
     <issueManagement>
